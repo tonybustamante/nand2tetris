@@ -1,0 +1,66 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/05/Memory.hdl
+
+/**
+ * The complete address space of the Hack computer's memory,
+ * including RAM and memory-mapped I/O. 
+ * The chip facilitates read and write operations, as follows:
+ *     Read:  out(t) = Memory[address(t)](t)
+ *     Write: if load(t-1) then Memory[address(t-1)](t) = in(t-1)
+ * In words: the chip always outputs the value stored at the memory 
+ * location specified by address. If load==1, the in value is loaded 
+ * into the memory location specified by address. This value becomes 
+ * available through the out output from the next time step onward.
+ * Address space rules:
+ * Only the upper 16K+8K+1 words of the Memory chip are used. 
+ * Access to address>0x6000 is invalid. Access to any address in 
+ * the range 0x4000-0x5FFF results in accessing the screen memory 
+ * map. Access to address 0x6000 results in accessing the keyboard 
+ * memory map. The behavior in these addresses is described in the 
+ * Screen and Keyboard chip specifications given in the book.
+ */
+
+CHIP Memory {
+    IN in[16], load, address[15];
+    OUT out[16];
+    //IN address[15], load;
+    //OUT out;
+
+    PARTS:
+    // Break out bits we'll need to check for validity
+    Or16(a[0..14]=address, b[0..14]=address, out[14]=Bit14, out[13]=Bit13, out[0..7]=LowA, out[5..12]=LowB, out[0..13]=ScreenMemSpace, out[0..13]=RamMemSpace);
+    
+    And(a=Bit13, b=Bit14, out=KeyboardOn); //keyboard bits on if bits 14 and 15 are set
+    Or8Way(in[0..7]=LowA, out=LowAon); // if lower 12 bits are on, and keyboard is on, address is out of range. 
+    Or8Way(in[0..7]=LowB, out=LowBon); // if lower 12 bits are on, and keyboard is on, address is out of range. 
+    Or(a=LowAon, b=LowBon, out=Lower12on); // Check if lower 12 are on
+    Not(in=Lower12on, out=NotLower12); 
+    And(a=KeyboardOn, b=NotLower12, out=KeyboardSelected); // Keyboard selected if KeyboardOn is set and NotLower12 is set
+
+
+    // Check for Screen Select
+    Not(in=KeyboardSelected, out=NotKeyboard); // Keyboard cannot be selected
+    And(a=NotKeyboard, b=Bit14, out=ScreenSelected);
+
+    
+    // Check for Memory Select
+    Not(in=ScreenSelected, out=NotScreen);
+    Not(in=Bit15, out=NotBit14);
+    And(a=NotScreen, b=NotBit14, out=RamSelected);
+
+
+
+   // Check Load
+   And(a=RamSelected, b=load, out=LoadRam);
+   And(a=ScreenSelected, b=load, out=LoadScreen);
+   And(a=KeyboardSelected, b=load, out=LoadKeyboard);
+
+
+    // Configure Individual Memory Chips (Ram, Screen, Keyboard) 
+    RAM16K(in=in, load=LoadRam, address[0..13]=RamMemSpace, out=RamOut);
+    Screen(in=in, load=LoadScreen, address[0..13]=ScreenMemSpace, out=ScreenOut);
+    Keyboard(out=KeyboardOut);    
+    
+    // Select which chip is output
